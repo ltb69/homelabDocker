@@ -46,6 +46,7 @@
         - apt_upgrade
 
     - name: Créer /etc/ssh/sshd_config.harden si inexistant (copie de l'original)
+      become: yes # Exécuter toutes les tâches avec les privilèges root (sudo)
       ansible.builtin.copy:
         src: /etc/ssh/sshd_config
         dest: /etc/ssh/sshd_config.harden
@@ -56,6 +57,7 @@
         - ssh_config
 
     - name: Créer /etc/ssh/sshd_config.relax si inexistant (copie de l'original)
+      become: yes # Exécuter toutes les tâches avec les privilèges root (sudo)
       ansible.builtin.copy:
         src: /etc/ssh/sshd_config
         dest: /etc/ssh/sshd_config.relax
@@ -66,6 +68,7 @@
         - ssh_config
 
     - name: Configurer /etc/ssh/sshd_config.harden avec les lignes spécifiées
+      become: yes # Exécuter toutes les tâches avec les privilèges root (sudo)
       ansible.builtin.blockinfile:
         path: /etc/ssh/sshd_config.harden
         block: "{{ sshd_harden_lines }}"
@@ -76,6 +79,7 @@
         - ssh_config
 
     - name: Configurer /etc/ssh/sshd_config.relax avec les lignes spécifiées
+      become: yes # Exécuter toutes les tâches avec les privilèges root (sudo)
       ansible.builtin.blockinfile:
         path: /etc/ssh/sshd_config.relax
         block: "{{ sshd_relax_lines }}"
@@ -85,9 +89,13 @@
       tags:
         - ssh_config
 
+    - name: Exécuter la commande harden_ssh
+      become: yes
+      ansible.builtin.shell: cp /etc/ssh/sshd_config.harden /etc/ssh/sshd_config && systemctl reload ssh
+
     - name: S'assurer que le répertoire personnel de l'utilisateur existe
       ansible.builtin.file:
-        path: "/home/{{ ansible_user_id }}" # Utilisez ansible_user_id pour l'utilisateur distant
+        path: "/home/{{ ansible_user_id }}"
         state: directory
         mode: '0755'
         owner: "{{ ansible_user_id }}"
@@ -98,10 +106,8 @@
     - name: Créer le fichier alias.bsh s'il n'existe pas
       ansible.builtin.file:
         path: "/home/{{ ansible_user_id }}/alias.bsh"
-        state: file
+        state: touch
         mode: '0644'
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
       tags:
         - aliases
 
@@ -117,7 +123,7 @@
     - name: Créer le fichier scripts.bsh s'il n'existe pas
       ansible.builtin.file:
         path: "/home/{{ ansible_user_id }}/scripts.bsh"
-        state: file
+        state: touch
         mode: '0644'
         owner: "{{ ansible_user_id }}"
         group: "{{ ansible_user_id }}"
@@ -175,15 +181,15 @@
           ansible.builtin.apt_repository:
             repo: "deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
             state: present
-            filename: docker # Nom du fichier dans /etc/apt/sources.list.d/
-            update_cache: yes # Mettre à jour le cache APT après l'ajout du dépôt
+            filename: docker
+            update_cache: yes
 
         - name: Ajouter le dépôt Docker aux sources APT
           ansible.builtin.apt_repository:
             repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
             state: present
-            filename: docker # Nom du fichier dans /etc/apt/sources.list.d/
-            update_cache: yes # Mettre à jour le cache APT après l'ajout du dépôt
+            filename: docker
+            update_cache: yes
 
         - name: Installer les paquets Docker
           ansible.builtin.apt:
@@ -317,9 +323,11 @@
       tags:
         - symlinks
 
-  handlers:
-    - name: Redémarrer la session utilisateur (Docker)
-      ansible.builtin.debug:
-        msg: "L'utilisateur '{{ ansible_user_id }}' a été ajouté au groupe 'docker'. Veuillez vous déconnecter et vous reconnecter pour que les changements prennent effet."
-      # Ceci est une notification, pas une action système.
-      # Un simple debug message est suffisant car Ansible ne peut pas forcer une déconnexion/reconnexion.
+    - name: Reboot si docker installé
+      become: yes
+      when: docker_check.rc != 0 # Exécute toutes les tâches Docker seulement si Docker n'est pas installé
+      ansible.builtin.reboot:
+        msg: "Reboot initiated by Ansible"
+        pre_reboot_delay: 5
+        post_reboot_delay: 10
+        test_command: "whoami"
