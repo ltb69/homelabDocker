@@ -103,6 +103,33 @@ Des playbooks Ansible peuvent être développés pour automatiser le déploiemen
     state: present
 ```
 
+## Automatisation avec Ansible
+
+Pour une gestion plus avancée et automatisée, notamment pour la configuration initiale des machines virtuelles (VMs) ou des déploiements complexes, ce projet utilise Ansible.
+
+Le répertoire `ansible/` à la racine du projet contient tous les éléments nécessaires à cette automatisation :
+
+```
+ansible/
+├── inventory.yml       # Fichier d'inventaire listant les machines à gérer
+├── playbooks/
+│   ├── xxx.yml         # Playbook exemple pour configurer une nouvelle VM
+│   └── yyy.yml         # Playbook principal orchestrant diverses tâches
+└── roles/              # (Optionnel) Répertoire pour les rôles Ansible réutilisables
+    └── ...
+```
+
+-   **`ansible/inventory.yml`**: Contient le fichier d'inventaire. Il définit les groupes de machines et les variables spécifiques aux hôtes.
+-   **`ansible/playbooks/`**: Contient les playbooks Ansible. Un playbook comme `setup_vm.yml` pourrait contenir les tâches pour installer Docker, configurer les utilisateurs, etc., sur une nouvelle machine. Le `main.yml` peut être utilisé pour orchestrer des déploiements plus larges.
+
+Pour exécuter un playbook, utilisez une commande similaire à celle-ci depuis la racine du projet :
+
+```bash
+ansible-playbook -i inventory.yml -l srvDev1 playbooks/install_VM.yml
+
+```
+
+Adaptez le nom du fichier d'inventaire et du playbook en fonction de vos besoins.
 ## Gestion de la Configuration (Variables)
 
 La configuration des services est gérée principalement via des fichiers `.env` situés dans le répertoire de chaque service.
