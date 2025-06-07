@@ -125,8 +125,7 @@ ansible/
 Pour exécuter un playbook, utilisez une commande similaire à celle-ci depuis la racine du projet :
 
 ```bash
-ansible-playbook -i inventory.yml -l srvDev1 playbooks/install_VM.yml
-
+ansible-playbook -i inventory.yml playbooks/install_VM.yml --vault-password-file ~/.vault_pass.txt
 ```
 
 Adaptez le nom du fichier d'inventaire et du playbook en fonction de vos besoins.

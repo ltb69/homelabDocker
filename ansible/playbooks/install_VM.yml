@@ -277,30 +277,26 @@
       tags:
         - fstab
 
-    - name: Cloner le dépôt homelabDocker dans ~/proxmoxGit
+    - name: Cloner le dépôt homelabDocker dans ~/homelabDockerGit
       ansible.builtin.git:
-        repo: 'https://github.com/ltb69/homelabDocker.git'
+        repo: 'https://{{ github_token }}@github.com/ltb69/homelabDocker.git'
+        dest: "/home/{{ ansible_user_id }}/homelabDockerGit"
+        single_branch: yes
+        version: main
+        accept_hostkey: yes
+        update: yes 
+      delegate_to: "{{ inventory_hostname }}"
+      tags:
+        - git_clone
+
+    - name: Cloner le dépôt proxmox dans ~/proxmoxGit
+      ansible.builtin.git:
+        repo: 'https://{{ github_token }}@github.com/ltb69/proxmox.git'
         dest: "/home/{{ ansible_user_id }}/proxmoxGit"
         single_branch: yes
         version: master
         accept_hostkey: yes
-        update: yes 
-        username: x-oauth-basic
-        password: "{{ github_token }}"
-      delegate_to: "{{ inventory_hostname }}" # S'assurer que la tâche est exécutée sur la cible
-      tags:
-        - git_clone
-
-    - name: Cloner le dépôt proxmox dans ~/ansibleGit
-      ansible.builtin.git:
-        repo: 'https://github.com/ltb69/proxmox.git'
-        dest: "/home/{{ ansible_user_id }}/ansibleGit"
-        single_branch: yes
-        version: main
-        accept_hostkey: yes
         update: yes
-        username: x-oauth-basic
-        password: "{{ github_token }}"
       delegate_to: "{{ inventory_hostname }}"
       tags:
         - git_clone
@@ -310,20 +306,14 @@
         src: "/home/{{ ansible_user_id }}/proxmoxGit/script"
         dest: "/home/{{ ansible_user_id }}/script"
         state: link
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
-      become: no # Le lien appartient à l'utilisateur, pas à root
       tags:
         - symlinks
 
-    - name: Créer le lien symbolique ~/compose vers ~/ansibleGit/<VM_NAME>
+    - name: Créer le lien symbolique ~/compose vers ~/homelabDockerGit/<VM_NAME>
       ansible.builtin.file:
-        src: "/home/{{ ansible_user_id }}/ansibleGit/{{ node_name }}"
+        src: "/home/{{ ansible_user_id }}/homelabDockerGit/{{ node_name }}"
         dest: "/home/{{ ansible_user_id }}/compose"
         state: link
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
-      become: no # Le lien appartient à l'utilisateur, pas à root
       tags:
         - symlinks
 
