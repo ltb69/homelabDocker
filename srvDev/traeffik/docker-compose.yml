@@ -1,0 +1,56 @@
+services:
+  traefik:
+    image: traefik:v3.4.1
+    ports:
+      - "80:80"
+      - "443:443"
+      # - "8080:8080" # Pour le dashboard Traefik (optionnel, sécurisez-le)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Accès à l'API Docker
+      - traefik_letsencrypt:/letsencrypt # Stockage des certificats SSL
+      - ./traefik_dynamic.toml:/etc/traefik/traefik_dynamic.toml # Optionnel pour config dynamique
+    networks:
+      - traefik-public
+    command:
+      - "--api.insecure=true" # Pour le dashboard sur 8080 (sécuriser avec auth si exposé) ou --api.dashboard=true
+#      - "--providers.docker.swarmMode=true"
+      - "--providers.docker.exposedByDefault=false" # Important: n'expose que les services avec label traefik.enable=true
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure" # Redirige HTTP vers HTTPS
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.dnschallenge=true"
+####      - "--certificatesresolvers.myresolver.acme.dnschallenge.provider=192.168.1.210"
+      # - "--certificatesresolvers.myresolver.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory" # Pour tests
+      - "--certificatesresolvers.myresolver.acme.email=homelab@ramusga.fr"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      # Ajoutez les variables d'environnement pour votre fournisseur DNS (YOUR_DNS_PROVIDER_API_KEY, etc.)
+      # Exemple pour Cloudflare:
+      # - CF_API_EMAIL=your-cloudflare-email@example.com
+      # - CF_API_KEY_FILE=/run/secrets/cloudflare_api_key
+#    secrets:
+      # - cloudflare_api_key # Si vous utilisez DNS challenge avec une clé API
+    deploy:
+      replicas: 1 # Ou plus pour HA de Traefik, mais nécessite un mécanisme de partage de l'état ACME plus avancé ou un seul actif.
+      placement:
+        constraints: [node.role == manager] # Souvent placé sur le manager
+      labels:
+        - "traefik.enable=true" # Pour que Traefik se découvre lui-même pour le dashboard (si vous le souhaitez)
+        - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.ramusga.lab`)"
+        - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+        - "traefik.http.routers.traefik-dashboard.tls.certresolver=myresolver"
+        - "traefik.http.routers.traefik-dashboard.service=api@internal" # Service interne Traefik pour le dashboard
+        # - "traefik.http.routers.traefik-dashboard.middlewares=traefik-auth" # Ajoutez une authentification
+        # - "traefik.http.middlewares.traefik-auth.basicauth.users=user:$$apr1$$...$$..." # htpasswd
+
+volumes:
+  traefik_letsencrypt:
+    driver: local
+    driver_opts:
+      type: virtiofs
+      o: bind
+      device: /media/srvDev/traefik/letsencrypt
+
+networks:
+  traefik-public:
+    external: true
