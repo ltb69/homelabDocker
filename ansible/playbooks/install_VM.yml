@@ -225,7 +225,7 @@
         - directories
 
     - name: Créer le répertoire /media/<VM_NAME>
-       become: yes
+      become: yes
       ansible.builtin.file:
         path: "/media/{{ node_name }}"
         state: directory
@@ -234,6 +234,98 @@
         group: root
       tags:
         - directories
+
+    - name: Ajouter l'entrée virtiofs pour /media/backup dans /etc/fstab
+      become: yes
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "backup  /media/backup  virtiofs  defaults,nofail  0  0"
+        regexp: '^backup\s+/media/backup\s+virtiofs\s+defaults,nofail\s+0\s+0$'
+        state: present
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+      tags:
+        - fstab
+
+    - name: Ajouter l'entrée virtiofs pour /media/common dans /etc/fstab
+      become: yes
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "common  /media/common  virtiofs  defaults,nofail  0  0"
+        regexp: '^common\s+/media/common\s+virtiofs\s+defaults,nofail\s+0\s+0$'
+        state: present
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+      tags:
+        - fstab
+
+    - name: Ajouter l'entrée virtiofs pour /media/<VM_NAME> dans /etc/fstab
+      become: yes
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: "{{ node_name }}  /media/{{ node_name }}  virtiofs  defaults,nofail  0  0"
+        regexp: '^{{ node_name }}\s+/media/{{ node_name }}\s+virtiofs\s+defaults,nofail\s+0\s+0$'
+        state: present
+        create: yes
+        owner: root
+        group: root
+        mode: '0644'
+      tags:
+        - fstab
+
+    - name: Cloner le dépôt homelabDocker dans ~/proxmoxGit
+      ansible.builtin.git:
+        repo: 'https://github.com/ltb69/homelabDocker.git'
+        dest: "/home/{{ ansible_user_id }}/proxmoxGit"
+        single_branch: yes
+        version: master
+        accept_hostkey: yes
+        update: yes 
+        username: x-oauth-basic
+        password: "{{ github_token }}"
+      delegate_to: "{{ inventory_hostname }}" # S'assurer que la tâche est exécutée sur la cible
+      tags:
+        - git_clone
+
+    - name: Cloner le dépôt proxmox dans ~/ansibleGit
+      ansible.builtin.git:
+        repo: 'https://github.com/ltb69/proxmox.git'
+        dest: "/home/{{ ansible_user_id }}/ansibleGit"
+        single_branch: yes
+        version: main
+        accept_hostkey: yes
+        update: yes
+        username: x-oauth-basic
+        password: "{{ github_token }}"
+      delegate_to: "{{ inventory_hostname }}"
+      tags:
+        - git_clone
+
+    - name: Créer le lien symbolique ~/script vers ~/proxmoxGit/script
+      ansible.builtin.file:
+        src: "/home/{{ ansible_user_id }}/proxmoxGit/script"
+        dest: "/home/{{ ansible_user_id }}/script"
+        state: link
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+      become: no # Le lien appartient à l'utilisateur, pas à root
+      tags:
+        - symlinks
+
+    - name: Créer le lien symbolique ~/compose vers ~/ansibleGit/<VM_NAME>
+      ansible.builtin.file:
+        src: "/home/{{ ansible_user_id }}/ansibleGit/{{ node_name }}"
+        dest: "/home/{{ ansible_user_id }}/compose"
+        state: link
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+      become: no # Le lien appartient à l'utilisateur, pas à root
+      tags:
+        - symlinks
 
   handlers:
     - name: Redémarrer la session utilisateur (Docker)
