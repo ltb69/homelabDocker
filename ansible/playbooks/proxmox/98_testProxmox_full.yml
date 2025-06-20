@@ -1,0 +1,167 @@
+---
+- name: Automatisation du déploiement et de la configuration des VMs Proxmox
+  hosts: DEV # Cible le groupe DEV pour itérer sur chaque VM
+  gather_facts: no # N'essaie pas de collecter les faits des VMs au début, car elles pourraient ne pas exister
+
+  vars:
+    proxmox_host: ms01 # Nom de l'hôte Proxmox dans votre inventaire (doit correspondre à [PROXMOX] ms01)
+    template_vmid: 9000 # ID de la VM template à cloner
+
+  tasks:
+    # --- 1. Clonage de la VM template ---
+    - name: Vérifier si la VM {{ vmId }} existe déjà sur Proxmox
+      ansible.builtin.shell: |
+        pqm list   | awk '{print $1}' | select(.vmid == {{ vmId }})'
+      register: vm_exists_check
+      delegate_to: "{{ proxmox_host }}" # Exécuter cette commande sur l'hôte Proxmox
+      changed_when: false # Cette tâche ne modifie rien, elle vérifie juste
+
+    - name: Display if exist
+      debug:
+        msg: "VM exists"
+      when: vm_exists_check.rc == 0
+
+    - name: Display if not exist
+      debug:
+        msg: "VM doesn't exists"
+      when: vm_exists_check.rc != 0
+
+    - name: Cloner la VM {{ vmId }} depuis le template {{ template_vmid }} si elle n'existe pas
+      ansible.builtin.shell: |
+        qm clone {{ template_vmid }} {{ vmId }} --name {{ node_name }} --pool {{ Pool }} --full false # --full false pour un "link clone"
+      delegate_to: "{{ proxmox_host }}"
+      when: vm_exists_check.stdout == "[]" # Exécuter seulement si la VM n'existe pas
+      # Note: Cette tâche ne gère pas l'idempotence si le clone échoue à mi-parcours
+      # et que la VM est partiellement créée. Pour une robustesse accrue, une gestion
+      # plus fine des états intermédiaires serait nécessaire.
+
+    - name: Modifier les paramètres de la VM {{ vmId }} (MAC, CPU, Mémoire, Ballooning)
+      ansible.builtin.shell: |
+        qm set {{ vmId }} -net0 virtio,mac={{ macAddr }} && \
+        qm set {{ vmId }} -cores {{ CPU }} && \
+        qm set {{ vmId }} -memory {{ MEM * 1024 }} -balloon 1024
+      delegate_to: "{{ proxmox_host }}"
+      # MEM est en GiB dans l'inventaire, Proxmox attend des MiB, donc MEM * 1024
+
+    # --- 2. Directory mapping ---
+    - name: Créer le répertoire /vm_data/media/toProxmox/{{ node_name }} sur Proxmox
+      ansible.builtin.file:
+        path: "/vm_data/media/toProxmox/{{ node_name }}"
+        state: directory
+        mode: '0777'
+        owner: '1000'
+        group: '1000'
+        recurse: yes # Applique les permissions récursivement si le chemin est nouveau
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Obtenir le nom du nœud Proxmox (variable proxmox_node_name)
+      # On récupère la variable node_name définie dans l'inventaire pour l'hôte proxmox_host (ms01)
+      ansible.builtin.set_fact:
+        proxmox_node_name: "{{ hostvars[proxmox_host].node_name }}"
+
+    - name: Vérifier si le mapping de répertoire {{ node_name }} existe
+      ansible.builtin.shell: |
+        pvesh ls /cluster/mapping/dir | grep " {{ node_name }}$"
+      register: mapping_exists_check
+      delegate_to: "{{ proxmox_host }}"
+      failed_when: false # grep retourne un code d'erreur (1) si non trouvé, ce qui n'est pas un échec pour nous
+      changed_when: false
+
+    - name: Créer le mapping de répertoire pour {{ node_name }} si non existant
+      ansible.builtin.shell: |
+        pvesh create /cluster/mapping/dir --id {{ node_name }} --map node={{ proxmox_node_name }},path=/vm_data/media/toProxmox/{{ node_name }}
+      delegate_to: "{{ proxmox_host }}"
+      when: mapping_exists_check.rc != 0 # rc=1 signifie que grep n'a rien trouvé (mapping inexistant)
+
+    - name: Ajouter les mappings de répertoire virtiofs à la VM {{ vmId }}
+      ansible.builtin.shell: |
+        qm set {{ vmId }} -virtiofs0 dirid={{ node_name }},cache=auto,expose-acl=1 && \
+        qm set {{ vmId }} -virtiofs1 dirid=common,cache=auto,expose-acl=1 && \
+        qm set {{ vmId }} -virtiofs2 dirid=backup,cache=auto,expose-acl=1
+      delegate_to: "{{ proxmox_host }}"
+      # Ces commandes sont idempotentes si les mappings sont déjà définis.
+      # Note : 'common' et 'backup' doivent être des mappings existants sur Proxmox.
+
+    # --- 3. Snapshot initial ---
+    - name: Créer le snapshot 'init' pour la VM {{ vmId }}
+      ansible.builtin.shell: qm snapshot {{ vmId }} init
+      delegate_to: "{{ proxmox_host }}"
+      # Attention : Si un snapshot 'init' existe déjà, cette tâche échouera.
+      # Pour l'idempotence, vous pouvez ajouter `qm snapshot {{ vmId }} init --force` pour écraser,
+      # ou vérifier l'existence avant. Pour ce workflow, on suppose une exécution initiale.
+
+    # --- 4. Démarrage VM ---
+    - name: Démarrer la VM {{ vmId }}
+      ansible.builtin.shell: qm start {{ vmId }}
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Attendre que la VM {{ vmId }} soit accessible via SSH
+      ansible.builtin.wait_for_connection:
+        delay: 10 # Attendre 10 secondes avant la première tentative
+        timeout: 300 # Attendre jusqu'à 5 minutes max
+
+    # --- 5. Configuration VM (toto.yml) ---
+    - name: Exécuter les tâches de configuration VM (toto.yml) sur {{ inventory_hostname }}
+      ansible.builtin.import_tasks: toto.yml
+
+    - name: Arrêter la VM {{ vmId }} après toto.yml
+      ansible.builtin.shell: qm stop {{ vmId }}
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Attendre 5 secondes que la VM {{ vmId }} s'éteigne
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Créer le snapshot 'upToDate' pour la VM {{ vmId }}
+      ansible.builtin.shell: qm snapshot {{ vmId }} upToDate
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Démarrer la VM {{ vmId }} après le snapshot 'upToDate'
+      ansible.builtin.shell: qm start {{ vmId }}
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Attendre que la VM {{ vmId }} soit de nouveau accessible via SSH
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: 300
+
+    # --- 6. Configuration VM (titi.yml) ---
+    - name: Exécuter les tâches d'installation de composants (titi.yml) sur {{ inventory_hostname }}
+      ansible.builtin.import_tasks: titi.yml
+
+    - name: Arrêter la VM {{ vmId }} après titi.yml
+      ansible.builtin.shell: qm stop {{ vmId }}
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Attendre 5 secondes que la VM {{ vmId }} s'éteigne
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Créer le snapshot 'config' pour la VM {{ vmId }}
+      ansible.builtin.shell: qm snapshot {{ vmId }} config
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Démarrer la VM {{ vmId }} après le snapshot 'config'
+      ansible.builtin.shell: qm start {{ vmId }}
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Attendre que la VM {{ vmId }} soit de nouveau accessible via SSH
+      ansible.builtin.wait_for_connection:
+        delay: 10
+        timeout: 300
+
+    # --- 7. Arrêt de la VM (tutu.yml) et snapshot final ---
+    - name: Exécuter les tâches d'installation Docker Compose (tutu.yml) sur {{ inventory_hostname }}
+      ansible.builtin.import_tasks: tutu.yml
+
+    - name: Arrêter la VM {{ vmId }} après tutu.yml
+      ansible.builtin.shell: qm stop {{ vmId }}
+      delegate_to: "{{ proxmox_host }}"
+
+    - name: Attendre 5 secondes que la VM {{ vmId }} s'éteigne
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Créer le snapshot 'set' pour la VM {{ vmId }}
+      ansible.builtin.shell: qm snapshot {{ vmId }} set
+      delegate_to: "{{ proxmox_host }}"

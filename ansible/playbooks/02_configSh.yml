@@ -1,0 +1,74 @@
+---
+- name: Config shell
+  hosts: all
+
+  vars:
+    # Variables pour les alias
+    common_aliases: |
+      alias ll='ls $LS_OPTIONS -l'
+      alias l='ls $LS_OPTIONS -lA'
+
+  tasks:
+    - name: Ensure home folder exists
+      when: home_alias_check.rc != 0
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user_id }}"
+        state: directory
+        mode: '0755'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+      tags:
+        - aliases
+
+    # add alias
+    - name: Check alias exists
+      command: ls -l "/home/{{ ansible_user_id }}/alias.bsh"
+      register: home_alias_check
+      ignore_errors: yes
+
+    - name: Create the alias.bsh file if it does not exist
+      when: home_alias_check.rc != 0
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user_id }}/alias.bsh"
+        state: touch
+        mode: '0644'
+      tags:
+        - aliases
+
+    - name: Add aliases in alias.bsh
+      ansible.builtin.blockinfile:
+        path: "/home/{{ ansible_user_id }}/alias.bsh"
+        block: "{{ common_aliases }}"
+        marker: "# {mark} ANSIBLE MANAGED ALIASES"
+        mode: '0644'
+      tags:
+        - aliases
+
+    # add script
+    - name: Check scripts exists
+      command: ls -l "/home/{{ ansible_user_id }}/scripts.bsh"
+      register: home_scripts_check
+      ignore_errors: yes
+
+    - name: Create the scripts.bsh file if it does not exist
+      when: home_alias_check.rc != 0
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user_id }}/scripts.bsh"
+        state: touch
+        mode: '0644'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+      tags:
+        - scripts
+
+    - name: Add scripts.bsh in .bashrc
+      ansible.builtin.lineinfile:
+        path: "/home/{{ ansible_user_id }}/.bashrc"
+        line: ". ~/scripts.bsh"
+        create: yes
+        insertbefore: EOF
+        regexp: '^\. ~\/scripts\.bsh$'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+      tags:
+        - bashrc

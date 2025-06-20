@@ -1,0 +1,27 @@
+---
+- name: Clone from template VM
+  hosts: DEV
+  gather_facts: no
+
+  vars:
+    proxmox_host: ms01
+    template_vmid: 9000
+
+  tasks:
+    # Clone template
+    - name: Check if VM {{ vmId }} exist
+      ansible.builtin.shell: |
+        qm list   | awk '{print $1}' | select(.vmid == {{ vmId }})'
+      register: vm_exists_check
+      delegate_to: "{{ proxmox_host }}"
+      changed_when: false
+
+    - name: Display if exist
+      debug:
+        msg: "VM exists"
+      when: vm_exists_check.rc == 0
+
+    - name: Display if not exist
+      debug:
+        msg: "VM doesn't exists"
+      when: vm_exists_check.rc != 0

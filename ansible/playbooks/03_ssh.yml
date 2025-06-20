@@ -1,0 +1,113 @@
+---
+- name: Harden SSH
+  hosts: all
+
+  vars:
+    sshd_harden_lines: |
+      PermitRootLogin prohibit-password
+      PasswordAuthentication no
+      UsePAM no
+    sshd_relax_lines: |
+      PermitRootLogin yes
+      PasswordAuthentication yes
+      UsePAM yes
+
+    common_aliases: |
+      alias harden_ssh='sudo cp /etc/ssh/sshd_config.harden /etc/ssh/sshd_config && systemctl reload ssh'
+      alias relax_ssh='sudo cp /etc/ssh/sshd_config.relax /etc/ssh/sshd_config && systemctl reload ssh'
+
+  tasks:
+    - name: Create /etc/ssh/sshd_config.harden from /etc/ssh/sshd_config
+      become: yes
+      ansible.builtin.copy:
+        src: /etc/ssh/sshd_config
+        dest: /etc/ssh/sshd_config.harden
+        remote_src: yes
+        force: no
+        mode: '0644'
+      tags:
+        - ssh_config
+
+    - name:  Create /etc/ssh/sshd_config.relax from /etc/ssh/sshd_config
+      become: yes
+      ansible.builtin.copy:
+        src: /etc/ssh/sshd_config
+        dest: /etc/ssh/sshd_config.relax
+        remote_src: yes
+        force: no
+        mode: '0644'
+      tags:
+        - ssh_config
+
+    - name: Update /etc/ssh/sshd_config.harden
+      become: yes
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config.harden
+        block: "{{ sshd_harden_lines }}"
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - sshd_config.harden"
+        mode: '0644'
+      tags:
+        - ssh_config
+
+    - name: Update /etc/ssh/sshd_config.relax
+      become: yes
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config.relax
+        block: "{{ sshd_relax_lines }}"
+        create: yes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - sshd_config.relax"
+        mode: '0644'
+      tags:
+        - ssh_config
+
+    - name: Harden SSH
+      become: yes
+      ansible.builtin.shell: cp /etc/ssh/sshd_config.harden /etc/ssh/sshd_config && systemctl reload ssh
+
+    - name: Check alias exists
+      command: ls -l "/home/{{ ansible_user_id }}/alias.bsh"
+      register: home_alias_check
+      ignore_errors: yes
+
+
+    - name: Ensure home folder exists
+      when: home_alias_check.rc != 0
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user_id }}"
+        state: directory
+        mode: '0755'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+      tags:
+        - aliases
+
+    - name: Create the alias.bsh file if it does not exist
+      when: home_alias_check.rc != 0
+      ansible.builtin.file:
+        path: "/home/{{ ansible_user_id }}/alias.bsh"
+        state: touch
+        mode: '0644'
+      tags:
+        - aliases
+
+    - name: Add aliases in alias.bsh
+      ansible.builtin.blockinfile:
+        path: "/home/{{ ansible_user_id }}/alias.bsh"
+        block: "{{ common_aliases }}"
+        marker: "# {mark} ANSIBLE MANAGED ALIASES"
+        mode: '0644'
+      tags:
+        - aliases
+
+    - name: add alias.bsh to .bashrc
+      ansible.builtin.lineinfile:
+        path: "/home/{{ ansible_user_id }}/.bashrc"
+        line: ". ~/alias.bsh"
+        create: yes
+        insertbefore: EOF
+        regexp: '^\. ~\/alias\.bsh$'
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+      tags:
+        - bashrc

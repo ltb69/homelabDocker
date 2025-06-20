@@ -1,0 +1,21 @@
+---
+- name: Config shell
+  hosts: all
+  
+  tasks:
+    - name: Reboot si docker installé
+      become: yes
+      community.general.shutdown:
+        delay: 0
+      delegate_to: proxmox
+
+    - name: Sleep for 300 seconds and continue with play
+      ansible.builtin.wait_for:
+        timeout: 300
+      delegate_to: proxmox
+
+      ansible.builtin.shutdown:
+        msg: "Reboot initiated by Ansible"
+        pre_reboot_delay: 5
+        post_reboot_delay: 10
+        test_command: "whoami"

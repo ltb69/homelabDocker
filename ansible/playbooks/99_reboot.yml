@@ -1,0 +1,12 @@
+---
+- name: Reboot and wait
+  hosts: all
+
+  tasks:
+    - name: Reboot si docker installé
+      become: yes
+      ansible.builtin.reboot:
+        msg: "Reboot initiated by Ansible"
+        pre_reboot_delay: 5
+        post_reboot_delay: 10
+        test_command: "whoami"
