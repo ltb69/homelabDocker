@@ -8,7 +8,10 @@ ms01 ansible_host=192.168.1.209 ansible_user=root node_name=proxmox
 lxc_admin ansible_host=192.168.1.210 ansible_user=root node_name=lxc_admin
 
 [DEV]
-srvDev1 ansible_host=192.168.1.110 ansible_user=luis node_name=srvDev1
+srvDev1 ansible_host=192.168.1.100 vmId=60 ansible_user=luis node_name=srvDev1 macAddr=70:85:c2:5a:db:00 CPU=4 MEM=12 Pool=dev-poll
+srvDev2 ansible_host=192.168.1.111 vmId=61 ansible_user=luis node_name=srvDev2 macAddr=70:85:c2:5a:db:01 CPU=4 MEM=12 Pool=dev-poll
+srvDev3 ansible_host=192.168.1.112 vmId=62 ansible_user=luis node_name=srvDev3 macAddr=70:85:c2:5a:db:02 CPU=4 MEM=12 Pool=dev-poll
+# srvDev1 ansible_host=192.168.1.110 ansible_user=luis node_name=srvDev1
 
 #[INFRA]
 #192.168.1.116
