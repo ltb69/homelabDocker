@@ -11,7 +11,7 @@
     # Clone template
     - name: Check if VM {{ vmId }} exist
       ansible.builtin.shell: |
-        qm list   | awk '{print $1}' | select(.vmid == {{ vmId }})'
+        qm list   | awk '{print $1}' | grep {{ vmId }})
       register: vm_exists_check
       delegate_to: "{{ proxmox_host }}"
       changed_when: false
